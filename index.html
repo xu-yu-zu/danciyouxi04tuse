@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>CyberPlane - 黄金拦截精锐版</title>
+    <style>
+        :root {
+            --purple-bg: #05000a;
+            --purple-panel: rgba(26, 0, 51, 0.95);
+            --gold-noble: #D4AF37;
+            --gold-glow: #FFD700;
+            --miss-pink: #ff00de;
+        }
+
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: var(--purple-bg); font-family: 'Segoe UI', 'PingFang SC', sans-serif; overflow: hidden; color: white; }
+        canvas { position: absolute; top: 0; left: 0; display: block; }
+
+        /* UI 顶栏 */
+        #ui-header {
+            position: absolute; top: 0; width: 100%; padding: 20px 40px;
+            display: flex; justify-content: space-between; align-items: center;
+            z-index: 10; pointer-events: none; box-sizing: border-box;
+        }
+        .stat-box { font-size: 1.2rem; color: var(--gold-noble); font-weight: bold; text-shadow: 0 0 10px var(--gold-noble); letter-spacing: 2px; }
+
+        /* 面板容器 */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(5, 0, 10, 0.9); display: flex; justify-content: center; align-items: center; z-index: 100;
+        }
+        .panel {
+            background: var(--purple-panel); border: 1px solid var(--gold-noble);
+            padding: 30px; width: 650px; box-shadow: 0 0 40px rgba(212, 175, 55, 0.2); text-align: center;
+        }
+
+        /* 预览区 - 2x5 紧凑布局 */
+        .preview-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            margin: 25px 0; border: 1px solid rgba(212, 175, 55, 0.3); padding: 15px; background: rgba(0,0,0,0.4);
+        }
+        .preview-item { display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid rgba(212, 175, 55, 0.1); }
+        .preview-item b { color: var(--gold-glow); font-size: 1.1rem; }
+        .preview-item span { color: #aaa; font-size: 0.9rem; }
+
+        /* 难度选择器 */
+        .diff-row { display: flex; justify-content: center; gap: 15px; margin-bottom: 25px; }
+        .diff-btn {
+            background: transparent; border: 1px solid var(--gold-noble); color: var(--gold-noble);
+            padding: 10px 30px; cursor: pointer; transition: 0.3s; font-weight: bold;
+        }
+        .diff-btn.active { background: var(--gold-noble); color: black; box-shadow: 0 0 20px var(--gold-noble); }
+
+        /* 启动按钮 */
+        .main-btn { background: var(--gold-noble); color: black; border: none; padding: 15px; font-weight: bold; cursor: pointer; font-size: 1.1rem; width: 100%; }
+
+        /* 输入区 */
+        #input-area { position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%); z-index: 50; display: none; }
+        #word-input {
+            background: rgba(0,0,0,0.8); border: 2px solid var(--gold-noble); color: var(--gold-glow);
+            font-size: 2.2rem; text-align: center; padding: 12px; width: 400px; outline: none; border-radius: 5px;
+        }
+
+        /* 成绩单样式 */
+        .report-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+            max-height: 350px; overflow-y: auto; margin: 20px 0; padding: 10px;
+            background: rgba(0,0,0,0.4); border: 1px solid #333;
+        }
+        .report-row { display: flex; justify-content: space-between; padding: 6px; border-bottom: 1px solid #222; font-size: 0.9rem; }
+        .res-hit { color: var(--gold-glow); font-weight: bold; }
+        .res-miss { color: var(--miss-pink); font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="matrixCanvas"></canvas>
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-header">
+        <div class="stat-box">拦截: <span id="hit-count">0</span></div>
+        <div class="stat-box" style="color:white; opacity:0.3; font-size:0.8rem;">CYBERPLANE INTERCEPTOR</div>
+        <div class="stat-box">漏掉: <span id="miss-count">0</span></div>
+    </div>
+
+    <div id="input-area"><input type="text" id="word-input" placeholder="输入并回车" autocomplete="off"></div>
+
+    <!-- 开始界面 -->
+    <div id="start-screen" class="overlay">
+        <div class="panel">
+            <h2 style="color: var(--gold-noble); margin:0; letter-spacing: 5px;">任务简报</h2>
+            <div id="preview-grid" class="preview-grid"></div>
+            
+            <div class="diff-row">
+                <button class="diff-btn" onclick="setDiff(0.35, this)">休闲</button>
+                <button class="diff-btn active" onclick="setDiff(0.7, this)">标准</button>
+                <button class="diff-btn" onclick="setDiff(1.8, this)">精英</button>
+            </div>
+
+            <button class="main-btn" onclick="startGame()">开始拦截作战</button>
+        </div>
+    </div>
+
+    <!-- 成绩单结算 -->
+    <div id="result-screen" class="overlay" style="display: none;">
+        <div class="panel">
+            <h2 id="final-score-title" style="color: var(--gold-noble); margin:0;">任务战报</h2>
+            <div id="report-grid" class="report-grid"></div>
+            <button class="main-btn" onclick="location.reload()">准备下一轮</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- 完整 679 词库 ---
+    const raw = "a:一(个)|able:有能力的|about:关于|accept:接受|accord:一致|according:根据|account:账目|across:横过|act:行为|action:行动|actually:实际上|add:添加|after:在...以后|again:又一次|against:反对|age:年龄|ago:以前|agree:同意|aid:帮助|air:空气|all:全部|allow:允许|almost:几乎|along:沿着|already:早已|also:也|although:虽然|always:总是|among:之中|and:和,又|announce:宣布|another:另一个|answer:回答|any:任何|anything:任何事|appear:出现|area:面积|arm:手臂,武器|army:军队|around:周围|art:艺术|as:当...时|ask:问|at:在...|attack:攻击|attempt:尝试|authority:权力|available:可用|away:离开|back:背后|bad:坏的|bank:银行|base:基础|based:立基于|be:是,在|beat:打败|because:因为|become:变成|before:以前|begin:开始|behind:在后|believe:相信|better:较好|between:在中间|big:大的|billion:十亿|bit:一点|bite:咬|black:黑色|blue:蓝色|body:身体|book:书籍|both:两者|boy:男孩|break:打破|bring:带来|brother:兄弟|brown:褐色|build:建造|building:建筑物|business:商业|but:但是|buy:买|by:被,由|call:喊|campaign:战役|can:能|cant:不能|capital:资本|car:轿车|care:关心|carry:携带|case:情况|cause:原因|central:主要|centre:中心|century:世纪|chance:机会|change:改变|charge:费用|chief:首席|child:小孩|city:城市|claim:声称|class:班级|clear:清晰|close:关闭|club:俱乐部|colour:颜色|come:来|coming:来临|committee:委员会|common:普通|community:社区|company:公司|complete:完整|concern:关心|condition:状况|conference:会议|consider:考虑|continue:继续|control:控制|cost:代价|could:能够|couldnt:不能|council:理事会|country:国家|course:课程|court:法庭|cover:盖住|create:创造|cup:杯子|current:当前|cut:切|daughter:女儿|day:一天|deal:交易|decide:决定|decision:决心|demand:要求|department:部门|describe:形容|design:设计|develop:发展|development:开发|didnt:未|die:死亡|different:不同|difficult:困难|direct:直接|director:导演|do:做|doesnt:不|dollar:美元|dont:不|door:门|down:向下|draw:画,拖|drive:驾驶|drug:药物|during:期间|each:每个|early:早的|east:东方|easy:容易|economic:经济|economy:节约|education:教育|effect:效果|effort:努力|eight:八|eighteen:十八|eighty:八十|either:任一个|election:选举|eleven:十一|else:其它|end:结束|enough:足够|even:甚至|event:事件|ever:曾经|every:每个|everything:每件事|example:例子|expect:预期|experience:经验|eye:眼睛|face:脸|fact:事实|fail:失败|fall:落下|family:家庭|far:远|father:父亲|fear:害怕|feel:感觉|few:很少|fifteen:十五|fifty:五十|fight:战斗|figure:数字|film:影片|final:最后|financial:财政|find:找到|firm:公司|first:第一|five:五|fly:飞行|follow:跟随|food:食物|foot:脚|for:为了|force:力量|foreign:外国|form:形式|former:前者|forty:四十|four:四|fourteen:十四|free:自由|friend:朋友|from:从|front:前面|full:满的|fund:基金|further:更进一步|future:未来|game:游戏|general:一般|get:得到|girl:女孩|give:给|go:去|going:进行|good:好|got:得到|government:政府|great:伟大|green:绿色|grey:灰色|ground:地面|group:小组|grow:生长|half:一半|hand:手|happen:发生|hard:困难|have:有|he:他|head:头|health:健康|hear:听见|help:帮助|her:她|here:这里|herself:她自己|hes:他是|high:高|him:他(宾)|himself:他自己|his:他的|history:历史|hit:打|hold:拿住|home:家|hope:希望|hospital:医院|host:主人|hour:小时|house:房屋|how:如何|however:然而|human:人类|hundred:百|i:我|id:我将|idea:想法|if:如果|ill:我将|im:我是|important:重要|in:里|include:包括|including:包括|increase:增加|independent:独立|industry:工业|information:信息|interest:兴趣|international:国际|into:进入|isnt:不是|issue:问题|it:它|its:它的|itself:它自己|ive:我有|job:职业|join:参加|just:刚才|keep:保持|kill:杀死|kind:种类|know:知道|labour:劳力|land:陆地|large:巨大|last:最后|late:晚|later:后来|laugh:笑|law:法律|lead:领导|leader:领袖|learn:学习|least:最少|leave:离开|left:左边|less:更少|let:让|letter:信|level:水平|life:生命|like:喜欢|likely:可能|line:线|list:列表|little:小|live:活着|local:当地|long:长|look:看|lose:丢失|lot:许多|love:爱|low:低|main:主要|major:专业|make:制造|man:男人|many:许多|market:市场|match:匹配|matter:事情|may:也许|me:我(宾)|mean:意思|meet:遇见|meeting:会议|member:成员|middle:中间|might:可能|military:军事|million:百万|mind:头脑|mine:我的|minister:部长|minute:分钟|moment:时刻|money:金钱|month:月份|more:更多|morning:早晨|most:最多|mother:母亲|move:移动|mr:先生|mrs:夫人|ms:女士|much:许多|music:音乐|must:必须|my:我的|name:名字|nation:国家|national:国家的|near:靠近|need:需要|never:从过|new:新|news:新闻|next:下一个|night:夜晚|nine:九|nineteen:十九|ninety:九十|no:不|north:北方|not:不|nothing:没什么|now:现在|number:数字|of:的|off:离开|offer:提供|office:办公室|officer:官员|official:官方|often:经常|oh:哦|oil:石油|old:老|on:上|once:曾经|one:一|only:只有|open:打开|operate:操作|operation:手术|or:或者|order:命令|other:其它|our:我们的|out:向外|outside:外面|over:之上|own:自己的|page:页|paper:纸|parent:父母|part:部分|party:党|pass:通过|past:过去|pay:支付|peace:和平|people:人|percent:百分比|perhaps:也许|person:人|photo:照片|place:地方|plan:计划|plant:植物|play:玩|player:队员|point:点|police:警察|policy:政策|political:政治|position:位置|possible:可能|pound:英镑|power:能力|president:总统|press:压|pressure:压力|price:价格|probably:可能|problem:问题|process:过程|produce:生产|product:产品|programme:程序|provide:提供|public:公众|put:放|question:问题|quick:快|quite:相当|race:种族|radio:收音机|raise:提出|rate:评价|rather:相当|reach:到达|read:阅读|real:真的|really:真正地|reason:理由|receive:收到|recent:最近|record:记录|red:红色|release:释放|remain:保持|remember:记得|report:报告|research:研究|result:结果|return:返回|right:正确|rise:上升|road:路|role:角色|room:房间|rule:规则|run:跑步|sale:销售|same:相同|save:救|say:说|school:学校|season:季节|second:秒|secretary:秘书|security:安全|see:看见|seek:寻求|seem:似乎|sell:卖|send:发送|sense:意义|serious:严重|service:服务|set:安置|seven:七|seventeen:十七|seventy:七十|several:几个|share:分享|she:她|short:短|should:应该|show:显示|side:侧面|sign:签名|since:由于|single:单一|sir:先生|sister:姐妹|sit:坐|situation:处境|six:六|sixteen:十六|sixty:六十|small:小|so:所以|social:社会|society:社会|some:一些|something:某事|son:儿子|soon:不久|sort:种类|sound:健康|south:南方|speak:说话|special:特殊|spend:花费|staff:员工|stage:阶段|stand:站立|star:明星|start:开始|state:状态|stay:停留|step:步骤|still:仍然|stock:库存|stop:停止|story:故事|street:街道|strong:强壮|student:学生|study:学习|such:如此|suggest:建议|support:支持|sure:确定|surprise:惊喜|system:系统|take:拿|talk:说话|tax:税|team:团队|tell:告诉|ten:十|term:学期|test:测试|than:比|thank:谢谢|that:那个|thats:那是|the:这|their:他们的|them:他们|themselves:自己|then:然后|there:那里|these:这些|they:他们|theyre:他们是|thing:东西|think:想|thirteen:十三|thirty:三十|this:这个|those:那些|though:虽然|thought:思想|thousand:千|three:三|through:穿过|time:时间|to:到|today:今天|together:一起|too:太|top:顶端|total:总数|towards:朝向|town:城镇|trade:贸易|try:尝试|turn:轮流|twelve:十二|twenty:二十|twice:两次|two:二|under:下|understand:理解|union:工会|university:大学|until:直到|up:向上|us:我们|use:使用|value:价值|very:非常|view:观点|visit:访问|vote:投票|wait:等待|walk:步行|wall:墙|want:想要|war:战争|wasnt:不是|watch:看|water:水|way:方式|we:我们|week:周|well:好|were:我们是|west:西|weve:我们有|what:什么|when:当时|where:哪里|whether:是否|which:哪个|while:当时|white:白色|who:谁|whole:整个|whose:谁的|why:为什么|wide:宽|wife:妻子|will:愿意|win:赢|with:和|within:在内|without:没有|woman:女人|wont:不会|word:单词|work:工作|worker:工人|working:工作中|world:世界|would:会|wouldnt:不会|write:写|year:年|yes:是|yesterday:昨天|yet:还|you:你|young:年轻|your:你的|youre:你是|youve:你有";
+    const allCollinsWords = raw.split('|').map(s => { const [en, zh] = s.split(':'); return { en, zh }; });
+
+    // --- 音效模块 ---
+    const AudioEngine = {
+        ctx: null, init() { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+        play(f, t, d, v) { if(!this.ctx) return; const o=this.ctx.createOscillator(), g=this.ctx.createGain(); o.type=t; o.frequency.setValueAtTime(f, this.ctx.currentTime); if(t==='square') o.frequency.exponentialRampToValueAtTime(10, this.ctx.currentTime+d); g.gain.setValueAtTime(v, this.ctx.currentTime); g.gain.linearRampToValueAtTime(0, this.ctx.currentTime+d); o.connect(g); g.connect(this.ctx.destination); o.start(); o.stop(this.ctx.currentTime+d); },
+        shoot() { this.play(800, 'square', 0.1, 0.1); }, hit() { this.play(400, 'triangle', 0.2, 0.2); }, miss() { this.play(150, 'sine', 0.4, 0.15); }
+    };
+
+    // --- 背景矩阵流 ---
+    const mCanvas = document.getElementById('matrixCanvas');
+    const mCtx = mCanvas.getContext('2d');
+    let drops = [];
+    function initMatrix() { mCanvas.width = window.innerWidth; mCanvas.height = window.innerHeight; drops = Array(Math.floor(mCanvas.width/20)).fill(1); }
+    function drawMatrix() { mCtx.fillStyle = "rgba(5, 0, 10, 0.15)"; mCtx.fillRect(0, 0, mCanvas.width, mCanvas.height); mCtx.fillStyle = "#B8860B"; mCtx.font = "15px monospace"; drops.forEach((y, i) => { const char = String.fromCharCode(0x30A0 + Math.random() * 96); mCtx.fillText(char, i * 20, y * 20); if (y * 20 > mCanvas.height && Math.random() > 0.975) drops[i] = 0; drops[i]++; }); }
+
+    // --- 游戏引擎核心 ---
+    const gCanvas = document.getElementById('gameCanvas');
+    const gCtx = gCanvas.getContext('2d');
+    const wordInput = document.getElementById('word-input');
+    
+    let gameSpeed = 0.7; // 标准模式
+    let currentTask = [];
+    let balloons = [];
+    let lasers = [];
+    let hits = 0, misses = 0, processed = 0;
+    let gameActive = false;
+    let finalHistory = []; // 用于存储对错
+
+    function init() {
+        const shuffled = [...allCollinsWords].sort(() => 0.5 - Math.random());
+        currentTask = shuffled.slice(0, 10);
+        document.getElementById('preview-grid').innerHTML = currentTask.map(w => `<div class="preview-item"><b>${w.en}</b><span>${w.zh}</span></div>`).join('');
+        initMatrix(); resize();
+    }
+
+    function resize() { gCanvas.width = window.innerWidth; gCanvas.height = window.innerHeight; }
+    window.addEventListener('resize', () => { initMatrix(); resize(); });
+
+    function setDiff(s, btn) { gameSpeed = s; document.querySelectorAll('.diff-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+
+    function startGame() {
+        if(!AudioEngine.ctx) AudioEngine.init();
+        if(AudioEngine.ctx.state === 'suspended') AudioEngine.ctx.resume();
+        document.getElementById('start-screen').style.display = 'none';
+        document.getElementById('input-area').style.display = 'block';
+        gameActive = true; wordInput.focus();
+        hits=0; misses=0; processed=0; balloons=[]; lasers=[]; finalHistory=[]; updateUI();
+        let spawned = 0;
+        const interval = setInterval(() => {
+            if (spawned < 10 && gameActive) {
+                balloons.push({ en: currentTask[spawned].en, zh: currentTask[spawned].zh, x: Math.random() * (window.innerWidth - 180) + 90, y: -100, dead: false });
+                spawned++;
+            } else { clearInterval(interval); }
+        }, 1800);
+    }
+
+    wordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const val = wordInput.value.toLowerCase().trim();
+            AudioEngine.shoot();
+            const target = balloons.find(b => b.en === val && !b.dead);
+            if (target) {
+                lasers.push({ x: target.x, y: target.y, life: 10 });
+                target.dead = true; hits++; processed++;
+                finalHistory.push({ ...target, status: '拦截成功' });
+                AudioEngine.hit(); updateUI();
+            }
+            wordInput.value = '';
+        }
+    });
+
+    function updateUI() { document.getElementById('hit-count').innerText = hits; document.getElementById('miss-count').innerText = misses; }
+
+    function gameLoop() {
+        drawMatrix();
+        gCtx.clearRect(0, 0, gCanvas.width, gCanvas.height);
+        if (gameActive) {
+            const cx = gCanvas.width / 2, cy = gCanvas.height - 100;
+            gCtx.fillStyle = "#D4AF37"; gCtx.beginPath(); gCtx.moveTo(cx, cy); gCtx.lineTo(cx-40, cy+50); gCtx.lineTo(cx+40, cy+50); gCtx.fill();
+            gCtx.fillRect(cx-3, cy-25, 6, 40);
+            for (let i = balloons.length - 1; i >= 0; i--) {
+                const b = balloons[i];
+                if (!b.dead) {
+                    b.y += gameSpeed;
+                    gCtx.fillStyle = "rgba(212, 175, 55, 0.9)"; gCtx.beginPath(); gCtx.arc(b.x, b.y, 45, 0, Math.PI * 2); gCtx.fill();
+                    gCtx.strokeStyle = "#D4AF37"; gCtx.lineWidth=2; gCtx.strokeRect(b.x-15, b.y+50, 30, 20);
+                    gCtx.fillStyle = "black"; gCtx.font = "bold 18px Arial"; gCtx.textAlign = "center"; gCtx.fillText(b.zh, b.x, b.y + 7);
+                    if (b.y > gCanvas.height - 50) { b.dead = true; misses++; processed++; finalHistory.push({ ...b, status: '漏掉逃逸' }); AudioEngine.miss(); updateUI(); }
+                } else { balloons.splice(i, 1); }
+            }
+            lasers.forEach((l, i) => {
+                gCtx.strokeStyle = "white"; gCtx.lineWidth = l.life; gCtx.beginPath(); gCtx.moveTo(gCanvas.width/2, gCanvas.height-100); gCtx.lineTo(l.x, l.y); gCtx.stroke();
+                l.life -= 2; if(l.life <= 0) lasers.splice(i, 1);
+            });
+            if (processed === 10 && lasers.length === 0) { gameActive = false; setTimeout(showReport, 800); }
+        }
+        requestAnimationFrame(gameLoop);
+    }
+
+    function showReport() {
+        document.getElementById('input-area').style.display = 'none';
+        document.getElementById('result-screen').style.display = 'flex';
+        document.getElementById('final-score-title').innerText = `作战结算: 拦截率 ${hits * 10}%`;
+        document.getElementById('report-grid').innerHTML = finalHistory.map(m => `
+            <div class="report-row">
+                <span class="${m.status === '拦截成功' ? 'res-hit' : 'res-miss'}">[${m.status}]</span>
+                <b>${m.en}</b>
+                <span>${m.zh}</span>
+            </div>
+        `).join('');
+    }
+
+    init(); requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
